@@ -25,11 +25,9 @@ CREATE CATALOG c_iceberg_hive WITH (
         'warehouse' = 's3a://warehouse',
         'hive-conf-dir' = './conf');
 
-USE CATALOG c_iceberg_hive;
+CREATE DATABASE `c_iceberg_hive`.`db01`;
 
-CREATE DATABASE db01;
-
-USE db01;
+USE `c_iceberg_hive`.`db01`;
 
 CREATE TABLE t_foo (c1 varchar, c2 int);
 
@@ -68,6 +66,23 @@ docker compose exec -t flink bash -c "tail -f log/*"
 [2024-02-02 21:30:23 UTC] 4.2KiB STANDARD db01.db/t_foo/metadata/snap-125388589100921283-1-3485210c-2c99-4c72-bb36-030c8e0a4a90.avro
 ----
 
+If you have DuckDB available locally you can run:
+
+```bash
+$ docker compose exec mc bash -c \
+        "mc cat minio/warehouse/db_rmoff.db/t_foo/data/00000-0-41e6f635-3859-46ef-a57e-de5f774203fa-00001.parquet" \
+        > /tmp/data.parquet && \
+        duckdb :memory: "SELECT * FROM read_parquet('/tmp/data.parquet')"
+┌─────────┬───────┐
+│   c1    │  c2   │
+│ varchar │ int32 │
+├─────────┼───────┤
+│ a       │    42 │
+└─────────┴───────┘
+```
+
+(replace `00000-0-41e6f635-3859-46ef-a57e-de5f774203fa-00001.parquet` with the actual filename)
+
 === Metastore
 
 Copy the DerbyDB and launch `ij`:
@@ -97,4 +112,20 @@ DB_ID  |DESC                   |DB_LOCATION_URI           |NAME        |OWNER_NA
 
 2 rows selected
 ij>
+
+ij> SELECT DB."NAME",  
+	       DB.DB_LOCATION_URI,  
+	       TB.TBL_NAME,  
+	       TBP.PARAM_VALUE  
+	FROM   APP.DBS DB  
+	       INNER JOIN APP.TBLS TB  
+	               ON DB.DB_ID = TB.DB_ID  
+	       INNER JOIN APP.TABLE_PARAMS TBP  
+	               ON TB.TBL_ID = TBP.TBL_ID  
+	WHERE  TBP.PARAM_KEY = 'metadata_location';
+
+NAME    |DB_LOCATION_URI            |TBL_NAME|PARAM_VALUE                                                                                         |
+--------+---------------------------+--------+----------------------------------------------------------------------------------------------------+
+db_rmoff|s3a://warehouse/db_rmoff.db|t_foo   |s3a://warehouse/t_foo/metadata/00000-5946940a-04fa-4a60-9bc9-b83db818560a.metadata.json             |
+
 ----
